@@ -7,6 +7,7 @@ interface UseRecordingReturn {
   recording: boolean;
   elapsed: number;
   error: string | null;
+  screenAudioMessage: string | null;
   devices: RecordingDevices | null;
   recordingPath: string | null;
   selectedVideoSourceId: string;
@@ -174,14 +175,62 @@ const openScreenStream = async (): Promise<MediaStream> => {
       width: { ideal: 1920 },
       height: { ideal: 1080 },
     },
-    audio: false,
+    audio: true,
   });
+};
+
+interface MixedAudioResult {
+  track: MediaStreamTrack | null;
+  context: AudioContext | null;
+  nodes: AudioNode[];
+}
+
+const createMixedAudioTrack = async (
+  tracks: MediaStreamTrack[],
+): Promise<MixedAudioResult> => {
+  const liveTracks = tracks.filter((track) => track.readyState === 'live');
+
+  if (liveTracks.length === 0) {
+    return { track: null, context: null, nodes: [] };
+  }
+
+  if (liveTracks.length === 1) {
+    return { track: liveTracks[0].clone(), context: null, nodes: [] };
+  }
+
+  const context = new AudioContext();
+  if (context.state === 'suspended') {
+    await context.resume().catch(() => {
+      // Some WebKit contexts resume on the next user gesture. If it cannot
+      // resume here, MediaRecorder will still receive the destination track
+      // once the context starts producing audio.
+    });
+  }
+
+  const destination = context.createMediaStreamDestination();
+  const nodes: AudioNode[] = [];
+
+  for (const track of liveTracks) {
+    const source = context.createMediaStreamSource(new MediaStream([track]));
+    source.connect(destination);
+    nodes.push(source);
+  }
+
+  const mixedTrack = destination.stream.getAudioTracks()[0] ?? null;
+  if (!mixedTrack) {
+    await context.close().catch(() => {});
+    return { track: null, context: null, nodes: [] };
+  }
+
+  nodes.push(destination);
+  return { track: mixedTrack, context, nodes };
 };
 
 export const useRecording = (): UseRecordingReturn => {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [screenAudioMessage, setScreenAudioMessage] = useState<string | null>(null);
   const [devices, setDevices] = useState<RecordingDevices | null>(null);
   const [recordingPath, setRecordingPath] = useState<string | null>(null);
   const [selectedVideoSourceId, setSelectedVideoSourceId] = useState(SCREEN_SOURCE_ID);
@@ -197,6 +246,8 @@ export const useRecording = (): UseRecordingReturn => {
   const previewStreamRef = useRef<MediaStream | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const recordingAudioContextRef = useRef<AudioContext | null>(null);
+  const recordingAudioNodesRef = useRef<AudioNode[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const selectedVideoSourceRef = useRef(selectedVideoSourceId);
@@ -266,14 +317,21 @@ export const useRecording = (): UseRecordingReturn => {
       setCaptureStartedAt(null);
       setCaptureFps(0);
       setCaptureTargetFps(CAPTURE_TARGET_FPS);
+      setScreenAudioMessage(null);
     }
   }, []);
 
   const releaseRecordingResources = useCallback(() => {
     stopMediaStream(recordingStreamRef.current);
     stopMediaStream(microphoneStreamRef.current);
+    recordingAudioNodesRef.current.forEach((node) => {
+      node.disconnect();
+    });
+    recordingAudioContextRef.current?.close().catch(() => {});
     recordingStreamRef.current = null;
     microphoneStreamRef.current = null;
+    recordingAudioContextRef.current = null;
+    recordingAudioNodesRef.current = [];
     mediaRecorderRef.current = null;
     recordedChunksRef.current = [];
   }, []);
@@ -396,6 +454,13 @@ export const useRecording = (): UseRecordingReturn => {
     setCaptureStartedAt(new Date().toISOString());
     setCaptureFps(getTrackFrameRate(nextStream));
     setCaptureTargetFps(CAPTURE_TARGET_FPS);
+    setScreenAudioMessage(
+      source?.kind === 'camera'
+        ? null
+        : nextStream.getAudioTracks().length > 0
+          ? 'Audio de pantalla detectado. Al grabar se mezclará con el micrófono seleccionado.'
+          : 'No se recibió audio de pantalla. Si necesitas Google Meet, comparte una pestaña/ventana con audio o revisa los permisos del navegador.',
+    );
 
     await loadDevices();
   }, [devices, handleCaptureEnded, loadDevices, releasePreview]);
@@ -468,10 +533,23 @@ export const useRecording = (): UseRecordingReturn => {
         audio: buildAudioConstraints(audioSource),
         video: false,
       });
+      const screenAudioTracks = getSelectedVideoSource(devices, selectedVideoSourceRef.current)?.kind === 'screen'
+        ? currentPreview.getAudioTracks()
+        : [];
+      const microphoneAudioTracks = microphoneStream.getAudioTracks();
+      const mixedAudio = await createMixedAudioTrack([
+        ...screenAudioTracks,
+        ...microphoneAudioTracks,
+      ]);
+
+      if (!mixedAudio.track) {
+        microphoneStream.getTracks().forEach((track) => track.stop());
+        throw new Error('No se pudo crear una pista de audio para la grabación');
+      }
 
       const recordingStream = new MediaStream([
         previewTrack.clone(),
-        ...microphoneStream.getAudioTracks(),
+        mixedAudio.track,
       ]);
 
       const mimeType = pickRecorderMimeType();
@@ -487,6 +565,8 @@ export const useRecording = (): UseRecordingReturn => {
 
       microphoneStreamRef.current = microphoneStream;
       recordingStreamRef.current = recordingStream;
+      recordingAudioContextRef.current = mixedAudio.context;
+      recordingAudioNodesRef.current = mixedAudio.nodes;
       mediaRecorderRef.current = mediaRecorder;
       recordedChunksRef.current = [];
       recordingMimeTypeRef.current = mediaRecorder.mimeType || mimeType || 'video/webm';
@@ -610,6 +690,7 @@ export const useRecording = (): UseRecordingReturn => {
     recording,
     elapsed,
     error,
+    screenAudioMessage,
     devices,
     recordingPath,
     selectedVideoSourceId,

@@ -36,6 +36,7 @@ export const MeetingsPage: React.FC<MeetingsPageProps> = ({ onNavigate }) => {
     recording,
     elapsed,
     error: recordingError,
+    screenAudioMessage,
     devices,
     recordingPath,
     selectedVideoSourceId,
@@ -221,6 +222,7 @@ export const MeetingsPage: React.FC<MeetingsPageProps> = ({ onNavigate }) => {
         recording={recording}
         elapsed={elapsed}
         error={recordingError}
+        screenAudioMessage={screenAudioMessage}
         devices={devices}
         selectedVideoSourceId={selectedVideoSourceId}
         selectedAudioId={selectedAudioId}

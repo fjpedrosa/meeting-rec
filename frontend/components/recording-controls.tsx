@@ -6,6 +6,7 @@ interface RecordingControlsProps {
   recording: boolean;
   elapsed: number;
   error: string | null;
+  screenAudioMessage: string | null;
   devices: RecordingDevices | null;
   selectedVideoSourceId: string;
   selectedAudioId: string;
@@ -38,6 +39,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   recording,
   elapsed,
   error,
+  screenAudioMessage,
   devices,
   selectedVideoSourceId,
   selectedAudioId,
@@ -213,7 +215,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
             </div>
 
             <div className="recording-audio-panel">
-              <span className="recording-audio-label">Micrófono</span>
+              <span className="recording-audio-label">Audio seleccionado</span>
               <div className="recording-audio-meter">
                 <AudioLevelBar level={audioLevel} />
               </div>
@@ -230,6 +232,20 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                   ? `Sin señal: ${audioLevelError}`
                   : 'El sonómetro usa la fuente de audio seleccionada arriba.'}
               </p>
+              {screenAudioMessage && (
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '12px',
+                    color: screenAudioMessage.startsWith('No se recibió')
+                      ? 'var(--warning, #f59e0b)'
+                      : 'var(--success, #10b981)',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {screenAudioMessage}
+                </p>
+              )}
             </div>
           </div>
         </div>
