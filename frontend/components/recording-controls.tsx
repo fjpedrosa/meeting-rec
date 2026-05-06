@@ -7,9 +7,12 @@ interface RecordingControlsProps {
   elapsed: number;
   error: string | null;
   screenAudioMessage: string | null;
+  recordingProcessing: boolean;
+  recordingProcessStarted: boolean;
   devices: RecordingDevices | null;
   selectedVideoSourceId: string;
   selectedAudioId: string;
+  selectedSystemAudioId: string;
   audioLevel: number;
   audioLevelError: string | null;
   captureActive: boolean;
@@ -20,6 +23,7 @@ interface RecordingControlsProps {
   previewStream: MediaStream | null;
   onVideoSourceChange: (id: string) => void;
   onAudioChange: (id: string) => void;
+  onSystemAudioChange: (id: string) => void;
   onStart: () => void;
   onStop: () => void;
   onProcess: () => void;
@@ -40,9 +44,12 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   elapsed,
   error,
   screenAudioMessage,
+  recordingProcessing,
+  recordingProcessStarted,
   devices,
   selectedVideoSourceId,
   selectedAudioId,
+  selectedSystemAudioId,
   audioLevel,
   audioLevelError,
   captureActive,
@@ -53,6 +60,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   previewStream,
   onVideoSourceChange,
   onAudioChange,
+  onSystemAudioChange,
   onStart,
   onStop,
   onProcess,
@@ -62,6 +70,12 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   recordingPath,
 }) => {
   const showProcessButton = !recording && recordingPath;
+  const processButtonDisabled = recordingProcessing || recordingProcessStarted;
+  const processButtonLabel = recordingProcessing
+    ? 'Iniciando procesamiento…'
+    : recordingProcessStarted
+      ? 'Procesamiento iniciado'
+      : 'Procesar grabación';
   const [hasFrame, setHasFrame] = useState(false);
   const previewRef = useRef<HTMLVideoElement | null>(null);
 
@@ -131,7 +145,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
           <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)' }}>
-            Fuente de audio
+            Micrófono
           </label>
           <select
             className="form-select recording-device-select"
@@ -148,6 +162,25 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
             ) : (
               <option value={selectedAudioId}>Micrófono por defecto</option>
             )}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+          <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)' }}>
+            Audio reunión/sistema
+          </label>
+          <select
+            className="form-select recording-device-select"
+            value={selectedSystemAudioId}
+            onChange={(e) => onSystemAudioChange(e.target.value)}
+            disabled={selectsDisabled}
+          >
+            <option value="none">No capturar</option>
+            {devices?.audio?.map((device) => (
+              <option key={device.id} value={device.id}>
+                {device.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -230,7 +263,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
               >
                 {audioLevelError
                   ? `Sin señal: ${audioLevelError}`
-                  : 'El sonómetro usa la fuente de audio seleccionada arriba.'}
+                  : 'El sonómetro mide el micrófono. El audio de reunión/sistema se mezcla al grabar si seleccionas una fuente como BlackHole.'}
               </p>
               {screenAudioMessage && (
                 <p
@@ -282,9 +315,20 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
           <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
             Grabación guardada: {recordingPath}
           </p>
-          <button className="btn btn-primary" onClick={onProcess}>
-            Procesar grabación
+          <button
+            className="btn btn-primary"
+            onClick={onProcess}
+            disabled={processButtonDisabled}
+            aria-busy={recordingProcessing}
+          >
+            {recordingProcessing && <div className="loading-spinner" style={{ width: 14, height: 14 }} />}
+            {processButtonLabel}
           </button>
+          {recordingProcessStarted && (
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
+              Ya se lanzó el procesamiento para esta grabación. Graba una nueva reunión para iniciar otro.
+            </p>
+          )}
         </div>
       )}
     </div>

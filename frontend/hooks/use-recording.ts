@@ -8,10 +8,13 @@ interface UseRecordingReturn {
   elapsed: number;
   error: string | null;
   screenAudioMessage: string | null;
+  recordingProcessing: boolean;
+  recordingProcessStarted: boolean;
   devices: RecordingDevices | null;
   recordingPath: string | null;
   selectedVideoSourceId: string;
   selectedAudioId: string;
+  selectedSystemAudioId: string;
   audioLevel: number;
   audioLevelError: string | null;
   captureActive: boolean;
@@ -22,6 +25,7 @@ interface UseRecordingReturn {
   previewStream: MediaStream | null;
   handleVideoSourceChange: (id: string) => void;
   handleAudioChange: (id: string) => void;
+  handleSystemAudioChange: (id: string) => void;
   loadDevices: () => Promise<void>;
   handleStart: () => Promise<void>;
   handleStop: () => Promise<string | null>;
@@ -31,6 +35,7 @@ interface UseRecordingReturn {
 }
 
 const SCREEN_SOURCE_ID = 'screen';
+const NO_SYSTEM_AUDIO_ID = 'none';
 const CAPTURE_TARGET_FPS = 30;
 const MIN_ACCEPTABLE_CAMERA_FPS = 24;
 
@@ -137,6 +142,13 @@ const buildAudioConstraints = (audioDevice: AudioSourceOption | null): MediaTrac
   return true;
 };
 
+const openAudioStream = async (audioDevice: AudioSourceOption | null): Promise<MediaStream> => {
+  return navigator.mediaDevices.getUserMedia({
+    audio: buildAudioConstraints(audioDevice),
+    video: false,
+  });
+};
+
 const openCameraStream = async (deviceId?: string): Promise<MediaStream> => {
   let lastError: unknown = null;
 
@@ -231,10 +243,13 @@ export const useRecording = (): UseRecordingReturn => {
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [screenAudioMessage, setScreenAudioMessage] = useState<string | null>(null);
+  const [recordingProcessing, setRecordingProcessing] = useState(false);
+  const [recordingProcessStarted, setRecordingProcessStarted] = useState(false);
   const [devices, setDevices] = useState<RecordingDevices | null>(null);
   const [recordingPath, setRecordingPath] = useState<string | null>(null);
   const [selectedVideoSourceId, setSelectedVideoSourceId] = useState(SCREEN_SOURCE_ID);
   const [selectedAudioId, setSelectedAudioId] = useState('default');
+  const [selectedSystemAudioId, setSelectedSystemAudioId] = useState(NO_SYSTEM_AUDIO_ID);
   const [captureActive, setCaptureActive] = useState(false);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [captureStartedAt, setCaptureStartedAt] = useState<string | null>(null);
@@ -246,12 +261,14 @@ export const useRecording = (): UseRecordingReturn => {
   const previewStreamRef = useRef<MediaStream | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const systemAudioStreamRef = useRef<MediaStream | null>(null);
   const recordingAudioContextRef = useRef<AudioContext | null>(null);
   const recordingAudioNodesRef = useRef<AudioNode[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const selectedVideoSourceRef = useRef(selectedVideoSourceId);
   const selectedAudioIdRef = useRef(selectedAudioId);
+  const selectedSystemAudioIdRef = useRef(selectedSystemAudioId);
   const captureBusyRef = useRef(false);
   const recordingMimeTypeRef = useRef('video/webm');
   const audioPermissionWarmupAttemptedRef = useRef(false);
@@ -263,6 +280,10 @@ export const useRecording = (): UseRecordingReturn => {
   useEffect(() => {
     selectedAudioIdRef.current = selectedAudioId;
   }, [selectedAudioId]);
+
+  useEffect(() => {
+    selectedSystemAudioIdRef.current = selectedSystemAudioId;
+  }, [selectedSystemAudioId]);
 
   useEffect(() => {
     captureBusyRef.current = captureBusy;
@@ -305,6 +326,11 @@ export const useRecording = (): UseRecordingReturn => {
       const exists = nextDevices.audio.some((device) => device.id === current);
       return exists ? current : (nextDevices.audio[0]?.id ?? 'default');
     });
+    setSelectedSystemAudioId((current) => {
+      if (current === NO_SYSTEM_AUDIO_ID) return current;
+      const exists = nextDevices.audio.some((device) => device.id === current);
+      return exists ? current : NO_SYSTEM_AUDIO_ID;
+    });
   }, []);
 
   const releasePreview = useCallback((resetState = true) => {
@@ -324,12 +350,14 @@ export const useRecording = (): UseRecordingReturn => {
   const releaseRecordingResources = useCallback(() => {
     stopMediaStream(recordingStreamRef.current);
     stopMediaStream(microphoneStreamRef.current);
+    stopMediaStream(systemAudioStreamRef.current);
     recordingAudioNodesRef.current.forEach((node) => {
       node.disconnect();
     });
     recordingAudioContextRef.current?.close().catch(() => {});
     recordingStreamRef.current = null;
     microphoneStreamRef.current = null;
+    systemAudioStreamRef.current = null;
     recordingAudioContextRef.current = null;
     recordingAudioNodesRef.current = [];
     mediaRecorderRef.current = null;
@@ -415,6 +443,8 @@ export const useRecording = (): UseRecordingReturn => {
         setRecording(false);
         const path = await stopActiveRecording();
         setRecordingPath(path);
+        setRecordingProcessing(false);
+        setRecordingProcessStarted(false);
         setError('La fuente de vídeo se cerró desde el sistema. Guardé la grabación hasta ese momento.');
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'La fuente se cerró y no se pudo guardar la grabación');
@@ -459,7 +489,7 @@ export const useRecording = (): UseRecordingReturn => {
         ? null
         : nextStream.getAudioTracks().length > 0
           ? 'Audio de pantalla detectado. Al grabar se mezclará con el micrófono seleccionado.'
-          : 'No se recibió audio de pantalla. Si necesitas Google Meet, comparte una pestaña/ventana con audio o revisa los permisos del navegador.',
+          : 'No se recibió audio de pantalla. Para pantalla completa en Brave, enruta Google Meet a BlackHole y selecciónalo en “Audio reunión/sistema”.',
     );
 
     await loadDevices();
@@ -527,23 +557,33 @@ export const useRecording = (): UseRecordingReturn => {
     try {
       setError(null);
       setCaptureBusy(true);
+      setRecordingPath(null);
+      setRecordingProcessing(false);
+      setRecordingProcessStarted(false);
 
-      const audioSource = getSelectedAudioSource(devices, selectedAudioIdRef.current);
-      const microphoneStream = await navigator.mediaDevices.getUserMedia({
-        audio: buildAudioConstraints(audioSource),
-        video: false,
-      });
-      const screenAudioTracks = getSelectedVideoSource(devices, selectedVideoSourceRef.current)?.kind === 'screen'
+      const selectedVideoSource = getSelectedVideoSource(devices, selectedVideoSourceRef.current);
+      const microphoneSource = getSelectedAudioSource(devices, selectedAudioIdRef.current);
+      const systemAudioSource = selectedSystemAudioIdRef.current === NO_SYSTEM_AUDIO_ID
+        ? null
+        : getSelectedAudioSource(devices, selectedSystemAudioIdRef.current);
+      const microphoneStream = await openAudioStream(microphoneSource);
+      const systemAudioStream = systemAudioSource && systemAudioSource.id !== microphoneSource?.id
+        ? await openAudioStream(systemAudioSource)
+        : null;
+      const screenAudioTracks = selectedVideoSource?.kind === 'screen'
         ? currentPreview.getAudioTracks()
         : [];
       const microphoneAudioTracks = microphoneStream.getAudioTracks();
+      const virtualSystemAudioTracks = systemAudioStream?.getAudioTracks() ?? [];
       const mixedAudio = await createMixedAudioTrack([
         ...screenAudioTracks,
+        ...virtualSystemAudioTracks,
         ...microphoneAudioTracks,
       ]);
 
       if (!mixedAudio.track) {
         microphoneStream.getTracks().forEach((track) => track.stop());
+        systemAudioStream?.getTracks().forEach((track) => track.stop());
         throw new Error('No se pudo crear una pista de audio para la grabación');
       }
 
@@ -564,6 +604,7 @@ export const useRecording = (): UseRecordingReturn => {
         : new MediaRecorder(recordingStream);
 
       microphoneStreamRef.current = microphoneStream;
+      systemAudioStreamRef.current = systemAudioStream;
       recordingStreamRef.current = recordingStream;
       recordingAudioContextRef.current = mixedAudio.context;
       recordingAudioNodesRef.current = mixedAudio.nodes;
@@ -605,6 +646,8 @@ export const useRecording = (): UseRecordingReturn => {
 
       const path = await stopActiveRecording();
       setRecordingPath(path);
+      setRecordingProcessing(false);
+      setRecordingProcessStarted(false);
       return path;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudo detener la grabación');
@@ -620,13 +663,22 @@ export const useRecording = (): UseRecordingReturn => {
       return;
     }
 
+    if (recordingProcessing || recordingProcessStarted) {
+      return;
+    }
+
     try {
       setError(null);
+      setRecordingProcessing(true);
       await processMovFile(recordingPath);
+      setRecordingProcessStarted(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudo procesar la grabación');
+      setRecordingProcessStarted(false);
+    } finally {
+      setRecordingProcessing(false);
     }
-  }, [recordingPath]);
+  }, [recordingPath, recordingProcessing, recordingProcessStarted]);
 
   const handleStartCapture = useCallback(async () => {
     if (captureBusy || recording) return;
@@ -678,6 +730,10 @@ export const useRecording = (): UseRecordingReturn => {
     setSelectedAudioId(id);
   }, []);
 
+  const handleSystemAudioChange = useCallback((id: string) => {
+    setSelectedSystemAudioId(id);
+  }, []);
+
   const selectedAudioDeviceId = getSelectedAudioSource(devices, selectedAudioId)?.deviceId ?? null;
   const audioLevelEnabled = (captureActive || recording) && (devices?.audio.length ?? 0) > 0;
   const { level: audioLevel, error: audioLevelError } = useAudioLevel(
@@ -691,10 +747,13 @@ export const useRecording = (): UseRecordingReturn => {
     elapsed,
     error,
     screenAudioMessage,
+    recordingProcessing,
+    recordingProcessStarted,
     devices,
     recordingPath,
     selectedVideoSourceId,
     selectedAudioId,
+    selectedSystemAudioId,
     audioLevel,
     audioLevelError,
     captureActive,
@@ -705,6 +764,7 @@ export const useRecording = (): UseRecordingReturn => {
     previewStream,
     handleVideoSourceChange,
     handleAudioChange,
+    handleSystemAudioChange,
     loadDevices,
     handleStart,
     handleStop,

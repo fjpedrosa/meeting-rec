@@ -37,10 +37,13 @@ export const MeetingsPage: React.FC<MeetingsPageProps> = ({ onNavigate }) => {
     elapsed,
     error: recordingError,
     screenAudioMessage,
+    recordingProcessing,
+    recordingProcessStarted,
     devices,
     recordingPath,
     selectedVideoSourceId,
     selectedAudioId,
+    selectedSystemAudioId,
     audioLevel,
     audioLevelError,
     captureActive,
@@ -51,6 +54,7 @@ export const MeetingsPage: React.FC<MeetingsPageProps> = ({ onNavigate }) => {
     previewStream,
     handleVideoSourceChange,
     handleAudioChange,
+    handleSystemAudioChange,
     loadDevices,
     handleStart,
     handleStop,
@@ -223,9 +227,12 @@ export const MeetingsPage: React.FC<MeetingsPageProps> = ({ onNavigate }) => {
         elapsed={elapsed}
         error={recordingError}
         screenAudioMessage={screenAudioMessage}
+        recordingProcessing={recordingProcessing}
+        recordingProcessStarted={recordingProcessStarted}
         devices={devices}
         selectedVideoSourceId={selectedVideoSourceId}
         selectedAudioId={selectedAudioId}
+        selectedSystemAudioId={selectedSystemAudioId}
         audioLevel={audioLevel}
         audioLevelError={audioLevelError}
         captureActive={captureActive}
@@ -236,6 +243,7 @@ export const MeetingsPage: React.FC<MeetingsPageProps> = ({ onNavigate }) => {
         previewStream={previewStream}
         onVideoSourceChange={handleVideoSourceChange}
         onAudioChange={handleAudioChange}
+        onSystemAudioChange={handleSystemAudioChange}
         onStart={handleStart}
         onStop={handleStop}
         onProcess={handleProcessRecording}
