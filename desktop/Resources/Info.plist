@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Meeting Transcriber</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.javi.meeting-transcriber</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleExecutable</key>
+    <string>MeetingTranscriber</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Necesario para grabar reuniones</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Necesario para grabar la cámara durante reuniones</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Necesario para grabar la pantalla durante reuniones</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Necesario para el selector de archivos nativo</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>LSUIElement</key>
+    <false/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>

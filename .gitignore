@@ -1,0 +1,46 @@
+# macOS
+.DS_Store
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+**/build/
+coverage/
+.turbo/
+.next/
+**/.build/
+*.app/
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+pipeline/.venv/
+
+# Local agent/tooling state
+.serena/
+
+# Runtime data: recordings, audio clips, SQLite databases, transcripts, etc.
+# Keep only empty placeholder files so fresh clones have the expected folders.
+data/**
+!data/
+!data/.gitkeep
+!data/db/
+!data/db/.gitkeep
+!data/clips/
+!data/clips/.gitkeep
+!data/recordings/
+!data/recordings/.gitkeep

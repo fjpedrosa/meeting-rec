@@ -1,0 +1,6 @@
+whisperx
+pyannote.audio
+torch
+torchaudio
+numpy
+scipy
