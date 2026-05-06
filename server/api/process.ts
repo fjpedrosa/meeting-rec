@@ -7,6 +7,14 @@ const PROJECT_DIR = join(import.meta.dir, "..", "..");
 const VENV_DIR = join(PROJECT_DIR, "pipeline", ".venv");
 const PIPELINE_SCRIPT = join(PROJECT_DIR, "pipeline", "process_meeting.py");
 const DB_PATH = join(PROJECT_DIR, "data", "db", "meetings.db");
+const COMMAND_OUTPUT_MAX_LINES = 25;
+
+const formatCommandOutput = (output: string): string => {
+  const trimmed = output.trim();
+  if (!trimmed) return "(no output)";
+
+  return trimmed.split(/\r?\n/).slice(-COMMAND_OUTPUT_MAX_LINES).join("\n");
+};
 
 /**
  * GET /api/process/pick-file
@@ -65,16 +73,26 @@ export const handleProcessMov = async (req: Request): Promise<Response> => {
       );
     }
 
+    if (movFile.size === 0) {
+      return Response.json(
+        { success: false, error: `Recording file is empty: ${movPath}` },
+        { status: 400 }
+      );
+    }
+
     // Derive MP3 path (same directory, same name, .mp3 extension)
     const mp3Path = movPath.replace(/\.[^.]+$/, ".mp3");
 
     // Extract audio with ffmpeg
     console.log(`Extracting audio from ${movPath}...`);
-    const ffmpegResult = await $`ffmpeg -y -i ${movPath} -vn -acodec libmp3lame -q:a 2 ${mp3Path} 2>&1`.quiet();
+    const ffmpegResult = await $`ffmpeg -y -i ${movPath} -vn -acodec libmp3lame -q:a 2 ${mp3Path} 2>&1`.nothrow().quiet();
 
     if (ffmpegResult.exitCode !== 0) {
       return Response.json(
-        { success: false, error: `ffmpeg failed: ${ffmpegResult.text()}` },
+        {
+          success: false,
+          error: `ffmpeg failed with exit code ${ffmpegResult.exitCode}:\n${formatCommandOutput(ffmpegResult.text())}`,
+        },
         { status: 500 }
       );
     }
@@ -82,8 +100,27 @@ export const handleProcessMov = async (req: Request): Promise<Response> => {
     console.log(`Audio extracted to ${mp3Path}`);
 
     // Get certifi path for SSL
-    const certifiResult = await $`${VENV_DIR}/bin/python -c "import certifi; print(certifi.where())"`.quiet();
+    const certifiResult = await $`${VENV_DIR}/bin/python -c "import certifi; print(certifi.where())"`.nothrow().quiet();
+    if (certifiResult.exitCode !== 0) {
+      return Response.json(
+        {
+          success: false,
+          error: `Python certifi lookup failed with exit code ${certifiResult.exitCode}:\n${formatCommandOutput(certifiResult.text())}`,
+        },
+        { status: 500 }
+      );
+    }
+
     const certPath = certifiResult.text().trim();
+    if (!certPath) {
+      return Response.json(
+        {
+          success: false,
+          error: "Python certifi lookup returned an empty certificate path",
+        },
+        { status: 500 }
+      );
+    }
 
     // Launch pipeline in background
     const env = {
