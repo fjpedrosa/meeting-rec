@@ -4,6 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "init": "bash scripts/setup.sh",
+    "setup": "bash scripts/setup.sh",
     "dev": "bun --hot server/index.ts",
     "desktop:build": "chmod +x desktop/scripts/build.sh && cd desktop && ./scripts/build.sh",
     "desktop:run": "open 'desktop/build/Meeting Transcriber.app'"

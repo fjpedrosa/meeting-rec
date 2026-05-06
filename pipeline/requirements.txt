@@ -1,6 +1,8 @@
-whisperx
+certifi
+mlx-whisper
+numpy
 pyannote.audio
+scipy
 torch
 torchaudio
-numpy
-scipy
+whisperx
